@@ -38,11 +38,18 @@ async def get_websites_load_time(urls):
     result = reduce(lambda acc, e: {**acc, **e}, result)
     return result
 
+def validate_urls(urls):
+    # I need some lib for schema...
+    if not isinstance(urls, list):
+        raise TypeError
+    return urls
+
 @app.route("/", methods=["POST"])
 def root():
     try:
         urls = request.get_json()['urls']
-    except KeyError as e:
+        urls = validate_urls(urls)
+    except (KeyError, TypeError) as e:
         return "Bad request", 400
     result = loop.run_until_complete(get_websites_load_time(urls))
     return jsonify(result)
