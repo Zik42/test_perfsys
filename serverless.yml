@@ -1,0 +1,28 @@
+service: test-zik
+
+org: zik42
+app: test
+
+frameworkVersion: '2'
+
+provider:
+  name: aws
+  runtime: python3.8
+
+
+custom:
+  wsgi:
+    app: app.app
+    packRequirements: false
+  pythonRequirements:
+    dockerizePip: true
+
+functions:
+  app:
+    handler: wsgi_handler.handler
+    events:
+      - http: ANY /
+
+plugins:
+  - serverless-python-requirements
+  - serverless-wsgi
