@@ -1,8 +1,9 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
 
 import time
 import aiohttp
 import asyncio
+from functools import reduce
 
 
 app = Flask(__name__)
@@ -17,13 +18,14 @@ async def get_website_load_time(time_start, url):
     async with aiohttp.ClientSession() as session:
         try:
             async with session.get(url, timeout=timeout): pass
+            load_time = time.time() - time_start
+            url_status = f"{load_time}s"
         except aiohttp.client_exceptions.InvalidURL as e:
-            return "Invalid server url"
+            url_status = "Invalid server url"
         except asyncio.TimeoutError as e:
-            return "Timeout"
+            url_status = "Timeout"
 
-    load_time = time.time() - time_start
-    return  load_time
+    return  { url: url_status }
 
 async def get_websites_load_time(urls):
     print(urls)
@@ -32,9 +34,9 @@ async def get_websites_load_time(urls):
 
     result = await asyncio.gather(*tasks)
 
-    print(result)
-
-    return "Meow."
+    # Merge list of dicts into one.
+    result = reduce(lambda acc, e: {**acc, **e}, result)
+    return result
 
 @app.route("/", methods=["POST"])
 def root():
@@ -43,5 +45,4 @@ def root():
     except KeyError as e:
         return "Bad request", 400
     result = loop.run_until_complete(get_websites_load_time(urls))
-    print(result)
-    return "ok"
+    return jsonify(result)
