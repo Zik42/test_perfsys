@@ -6,8 +6,9 @@ verify_ssl = true
 [dev-packages]
 
 [packages]
-flask = "*"
 aiohttp = {extras = ["speedups"], version = "*"}
+boto3 = "*"
+requests = "*"
 
 [requires]
 python_version = "3.8"

@@ -2,9 +2,15 @@
   "name": "test-perfsys",
   "description": "",
   "version": "0.1.0",
-  "dependencies": {},
+  "dependencies": {
+    "serverless-iam-roles-per-function": "^2.0.2",
+    "serverless-offline": "^6.8.0",
+    "serverless-pseudo-parameters": "^2.5.0"
+  },
   "devDependencies": {
+    "serverless-dynamodb-local": "^0.2.39",
     "serverless-python-requirements": "^5.1.0",
+    "serverless-step-functions": "^2.27.1",
     "serverless-wsgi": "^1.7.5"
   }
 }

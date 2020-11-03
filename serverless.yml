@@ -3,26 +3,124 @@ service: test-zik
 org: zik42
 app: test
 
-frameworkVersion: '2'
+frameworkVersion: '2.4'
 
 provider:
+  stage: dev
   name: aws
   runtime: python3.8
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:Query
+        - dynamodb:Scan
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+      Resource:
+        - { "Fn::GetAtt": ["websitesTable", "Arn" ] }
+  environment:
+    WEBSITES_TABLE: ${self:custom.websitesTableName}
 
+stepFunctions:
+  stateMachines:
+    processWebsiteStateMachine:
+      id:  ProcessWebsiteStateMachine
+      definition:
+        Comment: "Stepfunction for processing website according my task"
+        StartAt: processWebsiteURL
+        States:
+          processWebsiteURL:
+            Type: Task
+            Resource:
+                Fn::GetAtt: [processWebsite, Arn]
+            End: true
 
 custom:
-  wsgi:
-    app: app.app
-    packRequirements: false
+  websitesTableName: 'websites-table-${self:provider.stage}'
   pythonRequirements:
     dockerizePip: true
 
 functions:
-  app:
-    handler: wsgi_handler.handler
+
+  # Jobs route
+  createJob:
+    handler: app.create_job
+    environment:
+      WEBSITES_STATE_MACHINE_ARN: ${self:resources.Outputs.ProcessWebsiteStateMachine.Value}
     events:
-      - http: ANY /
+      - http: POST /jobs
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - states:StartExecution
+        Resource:
+          - { "Fn::GetAtt": ["ProcessWebsiteStateMachine", "Arn" ] }
+  getJobs:
+    handler: app.get_jobs
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - states:ListExecutions
+        Resource:
+          - { "Fn::GetAtt": ["ProcessWebsiteStateMachine", "Arn" ] }
+
+    environment:
+      WEBSITES_STATE_MACHINE_ARN: ${self:resources.Outputs.ProcessWebsiteStateMachine.Value}
+    events:
+      - http: GET /jobs
+  getJob:
+    handler: app.get_job
+    environment:
+      WEBSITES_STATE_MACHINE_ARN: ${self:resources.Outputs.ProcessWebsiteStateMachine.Value}
+    events:
+      - http: GET /jobs/{id}
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - states:DescribeExecution
+        Resource:
+          - "arn:aws:states:*:938668680897:execution:*:*"
+
+  # Websites route
+  getWebsite:
+    handler: app.get_websites
+    events:
+      - http: GET /websites/{id}
+  getWebsites:
+    handler: app.get_websites
+    events:
+      - http: GET /websites
+
+  # Process Website
+  processWebsite:
+    handler: app.process_website
+
+resources:
+  Outputs:
+     ProcessWebsiteStateMachine:
+       Description: "The ARN of the StateMachine for proccessing website"
+       Value:
+         Ref: ProcessWebsiteStateMachine
+  Resources:
+    websitesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: websitesTable
+        AttributeDefinitions:
+          - AttributeName: website
+            AttributeType: S
+        KeySchema:
+          - AttributeName: website
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
 
 plugins:
   - serverless-python-requirements
-  - serverless-wsgi
+  - serverless-dynamodb-local
+  - serverless-step-functions
+  - serverless-offline
+  - serverless-iam-roles-per-function

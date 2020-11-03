@@ -1,4 +1,8 @@
-from flask import Flask, request, jsonify
+# TODO inst, formatter
+import os
+import boto3
+import json
+import requests
 
 import time
 import aiohttp
@@ -6,37 +10,38 @@ import asyncio
 from functools import reduce
 
 
-app = Flask(__name__)
+client_stepfunctions= boto3.client('stepfunctions')
 
-DEFAULT_TIMEOUT_FOR_URL = 3
+from client.exceptions import *
 
+BAD_REQUEST_RESPONSE = {
+    "statusCode": 400,
+}
+
+SERVER_ERROR_RESPONSE = {
+    "statusCode": 500,
+}
 
 loop = asyncio.get_event_loop()
 
-async def get_website_load_time(time_start, url):
-    timeout = aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT_FOR_URL)
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.get(url, timeout=timeout): pass
-            load_time = time.time() - time_start
-            url_status = f"{load_time}s"
-        except aiohttp.client_exceptions.InvalidURL as e:
-            url_status = "Invalid server url"
-        except asyncio.TimeoutError as e:
-            url_status = "Timeout"
+def save_website_load_time(url, load_time):
+    pass
 
-    return  { url: url_status }
-
-async def get_websites_load_time(urls):
-    print(urls)
+def get_website_with_load_time(url):
     time_start = time.time()
-    tasks = [get_website_load_time(time_start, url) for url in urls]
 
-    result = await asyncio.gather(*tasks)
+    try:
+        response = requests.get(url)
+    except:
+        pass
 
-    # Merge list of dicts into one.
-    result = reduce(lambda acc, e: {**acc, **e}, result)
-    return result
+    load_time = time.time() - time_start
+    return  response, load_time
+
+def process_next_step_urls(reponseText):
+    """ Return dict of next steps, rss or instagram """
+    pass
+
 
 def validate_urls(urls):
     # I need some lib for schema...
@@ -44,12 +49,108 @@ def validate_urls(urls):
         raise TypeError
     return urls
 
-@app.route("/", methods=["POST"])
-def root():
+def process_website(event, context):
+    print(event)
+    print(context)
+
+    response, load_time = get_website_with_load_time(url)
+    save_website_load_time(load_time)
+
+    next_steps = process_next_step(response.text)
+
+    return next_steps
+
+
+
+def create_job(event, context):
+    WEBSITES_STATE_MACHINE_ARN = os.environ['WEBSITES_STATE_MACHINE_ARN']
+
     try:
-        urls = request.get_json()['urls']
-        urls = validate_urls(urls)
-    except (KeyError, TypeError) as e:
-        return "Bad request", 400
-    result = loop.run_until_complete(get_websites_load_time(urls))
-    return jsonify(result)
+        body_json = json.loads(event.get('body'))
+    except Exception as e:
+        print(e)
+
+    try:
+        client_stepfunctions.start_execution(
+            stateMachineArn=WEBSITES_STATE_MACHINE_ARN,
+            input=json.dumps(urls)
+        )
+    except (
+                client_stepfunctions.exceptions.StateMachineDoesNotExist
+        client_stepfunctions.exceptions.InvalidArn,
+        ):
+        return BAD_REQUEST_RESPONSE
+
+    except (
+        client_stepfunctions.exceptions.ExecutionLimitExceeded,
+        client_stepfunctions.exceptions.ExecutionAlreadyExists
+        client_stepfunctions.exceptions.InvalidExecutionInput
+        client_stepfunctions.exceptions.InvalidName
+        client_stepfunctions.exceptions.StateMachineDeleting
+    ):
+    return {
+        'statusCode': 200,
+    }
+
+
+def get_jobs(event, context):
+    """ Returns list of jobs """
+    WEBSITES_STATE_MACHINE_ARN = os.environ['WEBSITES_STATE_MACHINE_ARN']
+
+    response = client.list_executions(
+        stateMachineArn=WEBSITES_STATE_MACHINE_ARN,
+        maxResults=100,
+    )
+
+    try:
+        result = []
+        for execution in response['executions']:
+            result.append({
+                    'executionArn': execution['executionArn'],
+                    'status': execution['status'],
+                })
+    except KeyError:
+        return SERVER_ERROR_RESPONSE
+
+    return {
+        'statusCode': 200,
+        'body': json.dumps(result)
+    }
+
+
+def get_job(event, context):
+    WEBSITES_STATE_MACHINE_ARN = os.environ['WEBSITES_STATE_MACHINE_ARN']
+    try:
+        job_id = event['pathParameters']['id']
+        print(job_id)
+    except KeyError:
+        return BAD_REQUEST_RESPONSE
+
+    try:
+        response = client.describe_execution(
+            executionArn=job_id,
+        )
+    except (client.exceptions.InvalidArn, client.exceptions.ExecutionDoesNotExist):
+        return BAD_REQUEST_RESPONSE
+
+
+    try:
+        job = {
+            'executionArn': response['executionArn'],
+            'status': response['status']
+        }
+    except KeyError:
+        return SERVER_ERROR_RESPONSE
+
+    return {
+        'statusCode': 200,
+        'body': json.dumps(job)
+    }
+
+def get_websites(event, context):
+    print(event)
+    print(response)
+
+def get_website(event, context):
+    print(event)
+    print(response)
