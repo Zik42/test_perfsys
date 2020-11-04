@@ -34,7 +34,12 @@ stepFunctions:
           processWebsiteURL:
             Type: Task
             Resource:
-                Fn::GetAtt: [processWebsite, Arn]
+                Fn::GetAtt: [processWebsiteURL, Arn]
+            Next: processWebsiteMeta
+          processWebsite:
+            Type: Task
+            Resource:
+                Fn::GetAtt: [processWebsiteMeta, Arn]
             End: true
 
 custom:
@@ -94,8 +99,10 @@ functions:
       - http: GET /websites
 
   # Process Website
-  processWebsite:
-    handler: app.process_website
+  processWebsiteURL:
+    handler: app.process_website_url
+  processWebsiteMeta:
+    handler: app.process_website_meta
 
 resources:
   Outputs:
@@ -111,6 +118,12 @@ resources:
         AttributeDefinitions:
           - AttributeName: website
             AttributeType: S
+          - AttributeName: rss
+            AttributeType: S
+          - AttributeName: instagram
+            AttributeType: S
+          - AttributeName: load_time
+            AttributeType: S
         KeySchema:
           - AttributeName: website
             KeyType: HASH
@@ -120,7 +133,6 @@ resources:
 
 plugins:
   - serverless-python-requirements
-  - serverless-dynamodb-local
   - serverless-step-functions
   - serverless-offline
   - serverless-iam-roles-per-function
