@@ -29,20 +29,22 @@ stepFunctions:
       id:  ProcessWebsiteStateMachine
       definition:
         Comment: "Stepfunction for processing website according my task"
-        StartAt: processWebsiteURL
+        StartAt: processWebsite
         States:
-          processWebsiteURL:
-            Type: Task
-            Resource:
-                Fn::GetAtt: [processWebsiteURL, Arn]
-            Next: processWebsiteMeta
           processWebsite:
             Type: Task
             Resource:
-                Fn::GetAtt: [processWebsiteMeta, Arn]
+                Fn::GetAtt: [processWebsite, Arn]
+            Next: webhook
+          webhook:
+            Type: Task
+            Resource:
+                Fn::GetAtt: [webhook, Arn]
             End: true
 
 custom:
+  serverless-iam-roles-per-function:
+    defaultInherit: true
   websitesTableName: 'websites-table-${self:provider.stage}'
   pythonRequirements:
     dockerizePip: true
@@ -80,7 +82,7 @@ functions:
     environment:
       WEBSITES_STATE_MACHINE_ARN: ${self:resources.Outputs.ProcessWebsiteStateMachine.Value}
     events:
-      - http: GET /jobs/{id}
+      - http: GET /jobs/{arn}
     iamRoleStatements:
       - Effect: Allow
         Action:
@@ -92,17 +94,17 @@ functions:
   getWebsite:
     handler: app.get_websites
     events:
-      - http: GET /websites/{id}
+      - http: GET /websites/{domain}
   getWebsites:
     handler: app.get_websites
     events:
       - http: GET /websites
 
   # Process Website
-  processWebsiteURL:
-    handler: app.process_website_url
-  processWebsiteMeta:
-    handler: app.process_website_meta
+  processWebsite:
+    handler: app.process_website
+  webhook:
+    handler: app.webhook
 
 resources:
   Outputs:
@@ -114,18 +116,12 @@ resources:
     websitesTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: websitesTable
+        TableName: ${self:custom.websitesTableName}
         AttributeDefinitions:
-          - AttributeName: website
-            AttributeType: S
-          - AttributeName: rss
-            AttributeType: S
-          - AttributeName: instagram
-            AttributeType: S
-          - AttributeName: load_time
+          - AttributeName: domain
             AttributeType: S
         KeySchema:
-          - AttributeName: website
+          - AttributeName: domain
             KeyType: HASH
         ProvisionedThroughput:
           ReadCapacityUnits: 1
