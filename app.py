@@ -57,7 +57,6 @@ def findfeed(url, htmlText):
             print(e)
 
 
-
 def save_website(domain, load_time, rss=None, instagram=None):
     item = {'domain': {'S': str(domain)}, 'load_time': {'S': str(load_time)}}
 
@@ -100,7 +99,7 @@ def process_website(event, _):
 
 
 def webhook(event, _):
-    requests.post(event['domain'], json=event)
+    requests.post(event['webhook'], json=event)
 
 
 def validate_domains(domains):
@@ -197,18 +196,18 @@ def get_job(event, context):
 
 
 def db_website_item_to_json(item):
-    item = {'load_time': item['load_time']['S'], 'domain': item['domain']['S']}
+    res = {'load_time': item['load_time']['S'], 'domain': item['domain']['S']}
 
     try:
-        item['rss'] = item['rss']['S']
+        res['rss'] = item['rss']['S']
     except KeyError:
         pass
     try:
-        item['instagram'] = item['instagram']['S']
+        res['instagram'] = item['instagram']['S']
     except KeyError:
         pass
 
-    return item
+    return res
 
 
 def get_websites(event, context):
@@ -222,6 +221,7 @@ def get_websites(event, context):
         print(e)
         return SERVER_ERROR_RESPONSE
 
+    print(response)
     result = []
     for item in response.get('Items', []):
         result.append(db_website_item_to_json(item))
@@ -236,7 +236,7 @@ def get_website(event, context):
         return BAD_REQUEST_RESPONSE
 
     try:
-        response = client_dynamodb.get_item(TableName=WEBSITES_TABLE,
+        r = client_dynamodb.get_item(TableName=WEBSITES_TABLE,
                                             Key={'domain': {
                                                 'S': domain
                                             }})
@@ -247,4 +247,13 @@ def get_website(event, context):
         print(e)
         return SERVER_ERROR_RESPONSE
 
-    return {"statusCode": 200, "body": json.dumps(db_website_item_to_json(item))}
+
+    try:
+        item = r['Item']
+    except KeyError:
+        return {"statusCode": 404}
+
+    return {
+        "statusCode": 200,
+        "body": json.dumps(db_website_item_to_json(item))
+    }

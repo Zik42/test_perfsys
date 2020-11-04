@@ -92,7 +92,7 @@ functions:
 
   # Websites route
   getWebsite:
-    handler: app.get_websites
+    handler: app.get_website
     events:
       - http: GET /websites/{domain}
   getWebsites:
