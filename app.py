@@ -6,8 +6,6 @@ import requests
 import feedparser
 from urllib.parse import urlparse
 import time
-import aiohttp
-import asyncio
 from functools import reduce
 from bs4 import BeautifulSoup as bs4
 
@@ -15,6 +13,7 @@ client_stepfunctions = boto3.client('stepfunctions')
 client_dynamodb = boto3.client('dynamodb')
 
 WEBSITES_TABLE = os.environ['WEBSITES_TABLE']
+WEBSITES_STATE_MACHINE_ARN = os.environ.get('WEBSITES_STATE_MACHINE_ARN')
 
 BAD_REQUEST_RESPONSE = {
     "statusCode": 400,
@@ -23,8 +22,6 @@ BAD_REQUEST_RESPONSE = {
 SERVER_ERROR_RESPONSE = {
     "statusCode": 500,
 }
-
-loop = asyncio.get_event_loop()
 
 
 def findfeed(url, htmlText):
@@ -51,23 +48,18 @@ def findfeed(url, htmlText):
                 possible_feeds.append(base + href)
 
     for url in list(set(possible_feeds)):
-        print(url)
-        f = feedparser.parse(url)
-        if len(f.entries) > 0:
-            if url not in result:
-                result.append(url)
-    return (result)
+        try:
+            f = feedparser.parse(url)
+            if len(f.entries) > 0:
+                result = f['entries'][:5]
+            return json.dumps(result)
+        except Exception as e:
+            print(e)
+
 
 
 def save_website(domain, load_time, rss=None, instagram=None):
-    item = {
-        'domain': {
-            'S': str(domain)
-        },
-        'load_time': {
-            'S': str(load_time)
-        }
-    }
+    item = {'domain': {'S': str(domain)}, 'load_time': {'S': str(load_time)}}
 
     if rss:
         item['rss'] = {'S': str(rss)}
@@ -75,7 +67,12 @@ def save_website(domain, load_time, rss=None, instagram=None):
         item['instagram'] = {'S': str(instagram)}
 
     client_dynamodb.put_item(TableName=WEBSITES_TABLE, Item=item)
-    return {}
+    return {
+        "domain": domain,
+        "load_time": load_time,
+        "rss": rss,
+        "instagram": instagram
+    }
 
 
 def get_website_with_load_time(url):
@@ -93,8 +90,7 @@ def process_website(event, _):
 
     response, load_time = get_website_with_load_time(url)
 
-
-    rss = None
+    rss = findfeed(url, response.text)
     # TODO
     instagram = None
 
@@ -107,20 +103,19 @@ def webhook(event, _):
     requests.post(event['domain'], json=event)
 
 
-def validate_urls(urls):
-    if not isinstance(urls, list):
+def validate_domains(domains):
+    if not isinstance(domains, list):
         raise TypeError
-    return urls
+    return domains
 
 
 def create_job(event, context):
-    WEBSITES_STATE_MACHINE_ARN = os.environ['WEBSITES_STATE_MACHINE_ARN']
 
     try:
         body_json = json.loads(event.get('body'))
         domains = body_json['domains']
         webhook = body_json['webhook']
-        validate_urls(urls)
+        validate_domains(domains)
     except (KeyError, TypeError):
         return BAD_REQUEST_RESPONSE
     except Exception as e:
@@ -153,8 +148,6 @@ def create_job(event, context):
 
 
 def get_jobs(event, context):
-    """ Returns list of jobs """
-    WEBSITES_STATE_MACHINE_ARN = os.environ['WEBSITES_STATE_MACHINE_ARN']
 
     try:
         response = client_stepfunctions.list_executions(
@@ -180,7 +173,6 @@ def get_jobs(event, context):
 
 
 def get_job(event, context):
-    WEBSITES_STATE_MACHINE_ARN = os.environ['WEBSITES_STATE_MACHINE_ARN']
     try:
         job_arn = event['pathParameters']['arn']
     except KeyError:
@@ -188,7 +180,7 @@ def get_job(event, context):
 
     try:
         response = client_stepfunctions.describe_execution(
-            executionArn=job_id, )
+            executionArn=job_arn, )
     except (client_stepfunctions.exceptions.InvalidArn,
             client_stepfunctions.exceptions.ExecutionDoesNotExist):
         return BAD_REQUEST_RESPONSE
@@ -204,6 +196,21 @@ def get_job(event, context):
     return {'statusCode': 200, 'body': json.dumps(job)}
 
 
+def db_website_item_to_json(item):
+    item = {'load_time': item['load_time']['S'], 'domain': item['domain']['S']}
+
+    try:
+        item['rss'] = item['rss']['S']
+    except KeyError:
+        pass
+    try:
+        item['instagram'] = item['instagram']['S']
+    except KeyError:
+        pass
+
+    return item
+
+
 def get_websites(event, context):
 
     try:
@@ -211,15 +218,13 @@ def get_websites(event, context):
     except (client_dynamodb.exceptions.ProvisionedThroughputExceededException,
             client_dynamodb.exceptions.ResourceNotFoundException,
             client_dynamodb.exceptions.RequestLimitExceeded,
-            client_dynamodb.exceptions.InternalServerError):
+            client_dynamodb.exceptions.InternalServerError) as e:
+        print(e)
         return SERVER_ERROR_RESPONSE
 
     result = []
     for item in response.get('Items', []):
-        result.append({
-            'load_time': item['load_time']['S'],
-            'domain': item['domain']['S']
-        })
+        result.append(db_website_item_to_json(item))
     return {"statusCode": 200, "body": json.dumps(result)}
 
 
@@ -227,7 +232,7 @@ def get_website(event, context):
     try:
         domain = event['pathParameters']['domain']
     except KeyError as e:
-        print(E)
+        print(e)
         return BAD_REQUEST_RESPONSE
 
     try:
@@ -242,8 +247,4 @@ def get_website(event, context):
         print(e)
         return SERVER_ERROR_RESPONSE
 
-    return {"statusCode": 200, "body": json.dumps(response)}
-
-
-if __name__ == '__main__':
-    print(findfeed(requests.get("https://www.archlinux.org/feeds/").text))
+    return {"statusCode": 200, "body": json.dumps(db_website_item_to_json(item))}

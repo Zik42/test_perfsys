@@ -1,0 +1,119 @@
+openapi: '3.0.2'
+info:
+  title: "Perfsys Test API"
+  description: "Serverless aws application"
+  version: "1.0.0"
+paths:
+  '/jobs/{arn}':
+    get:
+      parameters:
+        - in: path
+          name: arn
+          schema:
+            type: string
+            description: Arn of job
+          required: true
+
+      description: "Returns jobs"
+      responses:
+        200:
+          description: "get jobs"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Job"
+  '/jobs':
+    post:
+      description: "Create job"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                webhook:
+                  type: string
+                  example: https://myservice/path/
+                domains:
+                  type: array
+                  items:
+                    type: string
+                    description: domain of web site
+                    example: google.com
+      responses:
+        200:
+          description: "Created job"
+
+    get:
+      description: "Returns last 100 jobs"
+      responses:
+        200:
+          description: "get jobs"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Job"
+
+  '/websites':
+    get:
+      description: "Get list of websites in db"
+      responses:
+        200:
+          description: "created job"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Website"
+
+  '/websites/{domain}':
+    get:
+      parameters:
+        - in: path
+          name: domain
+          schema:
+            type: string
+            description: Domain of website
+          required: true
+      description: "Get websites that start with domain"
+      responses:
+        200:
+          description: "Succes"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Website"
+
+components:
+  schemas:
+    Website:
+      title: Website object
+      type: object
+      required:
+        - website
+
+      properties:
+          domain:
+            type: string
+          rss:
+            type: string
+          instagram:
+            type: string
+
+    Job:
+      title: State machine execution
+      type: object
+      required:
+        - executionArn
+        - status
+
+      properties:
+          executionArn:
+            type: string
+          status:
+            type: string
+
